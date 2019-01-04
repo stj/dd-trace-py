@@ -1,5 +1,4 @@
 import functools
-import logging
 from os import environ, getpid
 
 from .ext import system
@@ -9,11 +8,11 @@ from .sampler import AllSampler, RateSampler, RateByServiceSampler
 from .writer import AgentWriter
 from .span import Span
 from .constants import FILTERS_KEY, SAMPLE_RATE_METRIC_KEY
-from . import compat
+from . import compat, logger
 from .ext.priority import AUTO_REJECT, AUTO_KEEP
 
 
-log = logging.getLogger(__name__)
+log = logger.get_logger(__name__)
 
 
 class Tracer(object):

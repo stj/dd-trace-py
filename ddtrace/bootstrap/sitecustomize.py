@@ -8,16 +8,19 @@ import imp
 import sys
 import logging
 
+from ddtrace import logger
 from ddtrace.utils.formats import asbool
 
 
 debug = os.environ.get("DATADOG_TRACE_DEBUG")
 if debug and debug.lower() == "true":
+    logger.configure(level=logging.DEBUG)
     logging.basicConfig(level=logging.DEBUG)
 else:
+    logger.configure(level=logging.WARN)
     logging.basicConfig()
 
-log = logging.getLogger(__name__)
+log = logger.get_logger(__name__)
 
 EXTRA_PATCHED_MODULES = {
     "bottle": True,

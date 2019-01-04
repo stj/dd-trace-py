@@ -1,6 +1,5 @@
 # stdlib
 import atexit
-import logging
 import threading
 import random
 import os
@@ -8,9 +7,10 @@ import time
 
 from ddtrace import api
 
+from . import logger
 from .api import _parse_response_json
 
-log = logging.getLogger(__name__)
+log = logger.get_logger(__name__)
 
 
 MAX_TRACES = 1000

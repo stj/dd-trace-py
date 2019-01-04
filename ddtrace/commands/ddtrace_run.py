@@ -6,8 +6,12 @@ import os
 import sys
 import logging
 
+from ddtrace import logger
+
 debug = os.environ.get("DATADOG_TRACE_DEBUG")
+logger.configure(level=logging.WARN)
 if debug and debug.lower() == "true":
+    logger.configure(level=logging.DEBUG)
     logging.basicConfig(level=logging.DEBUG)
 
 log = logging.getLogger(__name__)
