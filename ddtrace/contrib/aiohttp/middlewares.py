@@ -1,5 +1,7 @@
 import asyncio
 
+from aiohttp.web import middleware
+
 from ..asyncio import context_provider
 from ...compat import stringify
 from ...constants import ANALYTICS_SAMPLE_RATE_KEY
@@ -14,8 +16,8 @@ REQUEST_CONFIG_KEY = '__datadog_trace_config'
 REQUEST_SPAN_KEY = '__datadog_request_span'
 
 
-@asyncio.coroutine
-def trace_middleware(app, handler):
+@middleware
+async def trace_middleware(request, handler):
     """
     ``aiohttp`` middleware that traces the handler execution.
     Because handlers are run in different tasks for each request, we attach the Context
@@ -23,53 +25,60 @@ def trace_middleware(app, handler):
         * the Task is used by the internal automatic instrumentation
         * the ``Context`` attached to the request can be freely used in the application code
     """
-    @asyncio.coroutine
-    def attach_context(request):
-        # application configs
-        tracer = app[CONFIG_KEY]['tracer']
-        service = app[CONFIG_KEY]['service']
-        distributed_tracing = app[CONFIG_KEY]['distributed_tracing_enabled']
+    app = request.app
+    # application configs
+    tracer = app[CONFIG_KEY]['tracer']
+    service = app[CONFIG_KEY]['service']
+    distributed_tracing = app[CONFIG_KEY]['distributed_tracing_enabled']
 
-        # Create a new context based on the propagated information.
-        if distributed_tracing:
-            propagator = HTTPPropagator()
-            context = propagator.extract(request.headers)
-            # Only need to active the new context if something was propagated
-            if context.trace_id:
-                tracer.context_provider.activate(context)
 
-        # trace the handler
-        request_span = tracer.trace(
-            'aiohttp.request',
-            service=service,
-            span_type=http.TYPE,
+    # Create a new context based on the propagated information.
+    if distributed_tracing:
+        propagator = HTTPPropagator()
+        context = propagator.extract(request.headers)
+        # Only need to active the new context if something was propagated
+        if context.trace_id:
+            tracer.context_provider.activate(context)
+
+    # trace the handler
+    request_span = tracer.trace(
+        'aiohttp.request',
+        service=service,
+        span_type=http.TYPE,
+    )
+
+    # Configure trace search sample rate
+    # DEV: aiohttp is special case maintains separate configuration from config api
+    analytics_enabled = app[CONFIG_KEY]['analytics_enabled']
+    if (config.analytics_enabled and analytics_enabled is not False) or analytics_enabled is True:
+        request_span.set_tag(
+            ANALYTICS_SAMPLE_RATE_KEY,
+            app[CONFIG_KEY].get('analytics_sample_rate', True)
         )
 
-        # Configure trace search sample rate
-        # DEV: aiohttp is special case maintains separate configuration from config api
-        analytics_enabled = app[CONFIG_KEY]['analytics_enabled']
-        if (config.analytics_enabled and analytics_enabled is not False) or analytics_enabled is True:
-            request_span.set_tag(
-                ANALYTICS_SAMPLE_RATE_KEY,
-                app[CONFIG_KEY].get('analytics_sample_rate', True)
-            )
+    # Configure trace search sample rate
+    # DEV: aiohttp is special case maintains separate configuration from config api
+    analytics_enabled = app[CONFIG_KEY]['analytics_enabled']
+    if (config.analytics_enabled and analytics_enabled is not False) or analytics_enabled is True:
+        request_span.set_tag(
+            ANALYTICS_SAMPLE_RATE_KEY,
+            app[CONFIG_KEY].get('analytics_sample_rate', True)
+        )
 
-        # attach the context and the root span to the request; the Context
-        # may be freely used by the application code
-        request[REQUEST_CONTEXT_KEY] = request_span.context
-        request[REQUEST_SPAN_KEY] = request_span
-        request[REQUEST_CONFIG_KEY] = app[CONFIG_KEY]
-        try:
-            response = yield from handler(request)
-            return response
-        except Exception:
-            request_span.set_traceback()
-            raise
-    return attach_context
+    # attach the context and the root span to the request; the Context
+    # may be freely used by the application code
+    request[REQUEST_CONTEXT_KEY] = request_span.context
+    request[REQUEST_SPAN_KEY] = request_span
+    request[REQUEST_CONFIG_KEY] = app[CONFIG_KEY]
+    try:
+        response = await handler(request)
+        return response
+    except Exception:
+        request_span.set_traceback()
+        raise
 
 
-@asyncio.coroutine
-def on_prepare(request, response):
+async def on_prepare(request, response):
     """
     The on_prepare signal is used to close the request span that is created during
     the trace middleware execution.
